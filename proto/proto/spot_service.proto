@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package spot_service;
+
+option go_package = "github.com/dim-pep/Market2/shared/pb/spotservicepb";
+
+message CheckMarketsRequest {
+    string user_id = 1;
+}
+
+message Market {
+  string id = 1;
+  bool active = 2;
+}
+
+message CheckMarketsResponse {
+  repeated  Market markets = 1;
+}
+
+service SpotInstrumentService {
+  rpc CheckMarkets(CheckMarketsRequest) returns (CheckMarketsResponse);
+}

@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+package user_service;
+
+option go_package = "github.com/dim-pep/Market2/shared/pb/userservicepb";
+
+service UserService {
+  rpc RegisterNewUser(RegisterNewUserRequest) returns (RegisterNewUserResponse);
+  rpc GetUserData(GetUserDataRequest) returns (GetUserDataResponse);
+}
+
+enum UserRole {
+  USER_ROLE_UNSPECIFIED = 0;
+  USER_ROLE_BASIC = 1;
+  USER_ROLE_PREMIUM = 2;
+  USER_ROLE_ADMIN = 3;
+}
+
+message RegisterNewUserRequest {
+  string username = 1;
+  string password = 2;
+  string password_confirm = 3;
+  string full_name = 4;
+  UserRole user_role = 5;
+}
+
+message RegisterNewUserResponse {
+  string user_id = 1;
+  string username = 2;
+  string full_name = 4;
+  UserRole user_role = 5;
+}
+
+message GetUserDataRequest {
+    string userid = 1;
+}
+
+message GetUserDataResponse {
+  string user_id = 1;
+  string username = 2;
+  string full_name = 4;
+  UserRole user_role = 5;
+}

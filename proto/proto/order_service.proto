@@ -1,0 +1,56 @@
+syntax = "proto3";
+
+package order_service;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/dim-pep/Market2/shared/pb/orderservicepb";
+
+
+service OrderService {
+  rpc GetOrderStatus(GetOrderStatusRequest) returns (GetOrderStatusResponse);
+  rpc CreateOrder(CreateOrderRequest) returns (CreateOrderResponse);
+}
+
+enum OrderType {
+  ORDER_TYPE_UNSPECIFIED = 0;
+  ORDER_TYPE_MARKET_ORDER = 1;
+  ORDER_TYPE_LIMIT_ORDER = 2;
+}
+
+enum OrderStatus {
+  ORDER_STAUS_UNSPECIFIED = 0;
+  ORDER_STATUS_CREATED = 1; //Создан успешно но ещё не активный
+  ORDER_STATUS_FAILED = 2;  //Ошибка при создании
+  ORDER_STATUS_ACTIVE = 3;  //Готовый к продаже/покупке
+  ORDER_STATUS_COMPLETE = 4;//Завершённый
+}
+
+message CreateOrderRequest {
+  string user_id = 1;
+  string market_id = 2;
+  OrderType order_type = 3;
+  float price = 4;
+  uint64 quantity = 5;
+}
+
+message CreateOrderResponse {
+  string order_id = 1;
+  OrderStatus status = 2;
+}
+
+message GetOrderStatusRequest {
+  string order_id = 1;
+}
+
+message GetOrderStatusResponse {
+  string order_id = 1;
+  OrderStatus status = 2;
+  string user_id = 3;
+  string market_id = 4;
+  string session_id = 5;
+  OrderType order_type = 6;
+  float price = 7;
+  float quantity = 8;
+  google.protobuf.Timestamp created_at = 9;
+}

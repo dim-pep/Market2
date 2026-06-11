@@ -1,22 +1,25 @@
 syntax = "proto3";
 
-package spot_service;
+package sport;
 
-option go_package = "github.com/dim-pep/Market2/shared/pb/spotservicepb";
+option go_package = "proto/pb/spotservicepb;spot_service";
 
-message CheckMarketsRequest {
-    string user_id = 1;
+import "google/protobuf/timestamp.proto";
+
+service SportInstrumentService {
+    rpc ViewMarkets(ViewMarketsRequest) returns (ViewMarketsResponse);
+}
+
+message ViewMarketsRequest {
+    repeated string user_roles = 1;
+}
+
+message ViewMarketsResponse {
+    repeated Market markets = 1;
 }
 
 message Market {
-  string id = 1;
-  bool active = 2;
-}
-
-message CheckMarketsResponse {
-  repeated  Market markets = 1;
-}
-
-service SpotInstrumentService {
-  rpc CheckMarkets(CheckMarketsRequest) returns (CheckMarketsResponse);
+    uint64 id = 1;
+    bool enabled = 2;
+    optional google.protobuf.Timestamp deleted_at = 3;
 }

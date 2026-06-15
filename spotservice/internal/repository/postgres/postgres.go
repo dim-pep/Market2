@@ -18,6 +18,7 @@ type postgresMarketsRepo struct {
 
 func NewPostgresMarketsRepo(cfg *config.Config) (*postgresMarketsRepo, error) {
 	var db *sql.DB
+
 	operation := func() error {
 		var err error
 		db, err = openDB(cfg)
@@ -30,9 +31,16 @@ func NewPostgresMarketsRepo(cfg *config.Config) (*postgresMarketsRepo, error) {
 	bo.MaxElapsedTime = 15 * time.Second
 	bo.RandomizationFactor = 0.5
 
-	err := backoff.Retry(operation, bo)
-	if err != nil {
+	if err := backoff.Retry(operation, bo); err != nil {
 		return nil, fmt.Errorf("failed to connect to postgres after retries: %w", err)
+	}
+
+	initCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if err := InitTablesWithContext(initCtx, db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("failed to initialize postgres tables: %w", err)
 	}
 
 	return &postgresMarketsRepo{db: db}, nil

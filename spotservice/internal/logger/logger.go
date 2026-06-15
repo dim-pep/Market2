@@ -1,32 +1,53 @@
 package logger
 
 import (
+	"github.com/dim-pep/Market2/spotservice/config"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
 
 const (
-	modeDev  = "dev"
-	modeProd = "prod"
+	envLocal = "local"
+	envDev   = "dev"
+	envProd  = "prod"
 )
 
-func SetupLogger(mode string) (*zap.Logger, error) {
-	switch mode {
-	case modeDev:
-		config := zap.NewDevelopmentConfig()
-		config.EncoderConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
-		config.DisableStacktrace = true
-		return config.Build(
+func SetupLoggerFromConfig(cfg *config.Config) (*zap.Logger, error) {
+	if cfg == nil {
+		return SetupLogger(envLocal)
+	}
+
+	return SetupLogger(cfg.Env)
+}
+
+func SetupLogger(env string) (*zap.Logger, error) {
+	switch env {
+	case envLocal, envDev:
+		cfg := zap.NewDevelopmentConfig()
+		cfg.EncoderConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
+		cfg.DisableStacktrace = true
+
+		return cfg.Build(
 			zap.AddCaller(),
-			zap.Fields(zap.String("mode", mode)),
+			zap.Fields(zap.String("env", env)),
 		)
-	case modeProd:
-		return zap.NewProduction()
-	default:
-		config := zap.NewDevelopmentConfig()
-		return config.Build(
+
+	case envProd:
+		cfg := zap.NewProductionConfig()
+
+		return cfg.Build(
 			zap.AddCaller(),
-			zap.Fields(zap.String("mode", "unknow mode")),
+			zap.Fields(zap.String("env", env)),
+		)
+
+	default:
+		cfg := zap.NewDevelopmentConfig()
+		cfg.EncoderConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
+		cfg.DisableStacktrace = true
+
+		return cfg.Build(
+			zap.AddCaller(),
+			zap.Fields(zap.String("env", env)),
 		)
 	}
 }

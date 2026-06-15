@@ -3,74 +3,96 @@ package service
 import (
 	"context"
 
-	"github.com/dim-pep/Market2/spotservice/interceptors"
 	"github.com/dim-pep/Market2/spotservice/internal/cache"
 	"github.com/dim-pep/Market2/spotservice/internal/domain"
+	"github.com/dim-pep/Market2/spotservice/internal/errs"
+	"github.com/dim-pep/Market2/spotservice/internal/interceptors"
 	"github.com/dim-pep/Market2/spotservice/internal/repository"
-
 	"go.uber.org/zap"
 )
 
 type MarketService struct {
 	marketsRepo repository.MarketsRepo
 	logger      *zap.Logger
-	cacheClient cache.CacheRepo
+	CacheRepo   cache.CacheRepo
 }
 
-func NewMarketService(repo repository.MarketsRepo, logger *zap.Logger, cache cache.CacheRepo) *MarketService {
-	return &MarketService{marketsRepo: repo, logger: logger, cacheClient: cache}
+func NewMarketService(repo repository.MarketsRepo, logger *zap.Logger, CacheRepo cache.CacheRepo) *MarketService {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	return &MarketService{
+		marketsRepo: repo,
+		logger:      logger,
+		CacheRepo:   CacheRepo,
+	}
 }
 
 func (ms *MarketService) CloseDBConnection() error {
-	if ms.marketsRepo == nil {
+	if ms == nil || ms.marketsRepo == nil {
 		return nil
 	}
 
 	return ms.marketsRepo.Close()
 }
 
-func (os *MarketService) CloseCacheClient() error {
-	if os.cacheClient == nil {
+func (ms *MarketService) CloseCacheClient() error {
+	if ms == nil || ms.CacheRepo == nil {
 		return nil
 	}
 
-	return os.cacheClient.Close()
+	return ms.CacheRepo.Close()
 }
 
 func (ms *MarketService) ViewMarkets(ctx context.Context, req *domain.ViewMarketsRequest) (*domain.ViewMarketsResponse, error) {
-	rid := interceptors.XRequestFromContext(ctx)
-
-	logger := ms.logger.With(
-		zap.String("request_id", rid),
-	)
-
 	if err := ctx.Err(); err != nil {
-
-		ms.logger.Warn("view_markets.failed", zap.Error(err))
 		return nil, err
 	}
 
-	logger.Info("view_markets.started", zap.Strings("user_roles", req.UserRoles))
+	if req == nil {
+		return nil, errs.ErrNilViewMarketsRequest
+	}
+
+	if ms == nil || ms.marketsRepo == nil {
+		return nil, errs.ErrMarketRepositoryNotConfigured
+	}
+
+	requestID := interceptors.RequestIDFromContext(ctx)
+
+	logger := ms.logger.With(
+		zap.String("request_id", requestID),
+		zap.String("operation", "view_markets"),
+	)
+
+	logger.Info(
+		"view markets started",
+		zap.Strings("user_roles", req.UserRoles),
+	)
 
 	markets, err := ms.marketsRepo.ViewMarketsByRoles(ctx, req.UserRoles)
 	if err != nil {
-
-		ms.logger.Warn("view_markets.failed",
-			zap.String("operation", "markets_repo.view_markets_by_roles"),
+		logger.Warn(
+			"view markets failed",
+			zap.String("repository_method", "ViewMarketsByRoles"),
 			zap.Error(err),
 		)
+
 		return nil, err
 	}
 
 	marketIDs := make([]uint64, 0, len(markets))
-	for _, m := range markets {
-		marketIDs = append(marketIDs, m.ID)
+	for _, market := range markets {
+		marketIDs = append(marketIDs, market.ID)
 	}
 
-	logger.Info("view_markets.succeeded",
+	logger.Info(
+		"view markets succeeded",
 		zap.Int("markets_count", len(markets)),
 		zap.Uint64s("market_ids", marketIDs),
 	)
 
-	return &domain.ViewMarketsResponse{Markets: markets}, nil
+	return &domain.ViewMarketsResponse{
+		Markets: markets,
+	}, nil
 }

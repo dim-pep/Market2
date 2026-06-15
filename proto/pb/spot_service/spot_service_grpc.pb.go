@@ -4,7 +4,7 @@
 // - protoc             v6.33.4
 // source: spot_service.proto
 
-package sport_service
+package spot_service
 
 import (
 	context "context"
@@ -19,7 +19,7 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	SportInstrumentService_ViewMarkets_FullMethodName = "/sport.SportInstrumentService/ViewMarkets"
+	SportInstrumentService_ViewMarkets_FullMethodName = "/spot_service.SportInstrumentService/ViewMarkets"
 )
 
 // SportInstrumentServiceClient is the client API for SportInstrumentService service.
@@ -109,7 +109,7 @@ func _SportInstrumentService_ViewMarkets_Handler(srv interface{}, ctx context.Co
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var SportInstrumentService_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "sport.SportInstrumentService",
+	ServiceName: "spot_service.SportInstrumentService",
 	HandlerType: (*SportInstrumentServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{

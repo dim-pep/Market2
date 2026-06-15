@@ -1,4 +1,4 @@
-package cache
+package redis_cache
 
 import (
 	"context"
@@ -7,93 +7,79 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
+	"github.com/dim-pep/Market2/spotservice/config"
+	"github.com/dim-pep/Market2/spotservice/internal/errs"
 	"github.com/redis/go-redis/v9"
 	"google.golang.org/protobuf/proto"
 )
 
-var ErrCacheMiss = errors.New("cache entry not found")
-
-type RedisConfig struct {
-	Host         string
-	Port         int
-	Password     string
-	Database     int
-	TTL          string
-	DialTimeout  string
-	ReadTimeout  string
-	WriteTimeout string
-	PoolTimeout  string
-	PoolSize     int
-	MinIdleConns int
+type redisRepo struct {
+	client *redis.Client
+	ttl    time.Duration
 }
 
-type RedisMessageCache struct {
-	client     *redis.Client
-	defaultTTL time.Duration
-}
-
-func NewRedisMessageCache(cfg RedisConfig) (*RedisMessageCache, error) {
+func NewRedisRepo(cfg *config.Config) (*redisRepo, error) {
 	var client *redis.Client
 
 	connect := func() error {
 		var err error
-		client, err = openRedisClient(cfg)
+		client, err = openRedis(cfg)
 		return err
 	}
 
-	retryPolicy := backoff.NewExponentialBackOff()
-	retryPolicy.InitialInterval = 1 * time.Second
-	retryPolicy.MaxInterval = 5 * time.Second
-	retryPolicy.MaxElapsedTime = 10 * time.Second
-	retryPolicy.RandomizationFactor = 0.5
+	bo := backoff.NewExponentialBackOff()
+	bo.InitialInterval = 1 * time.Second
+	bo.MaxInterval = 5 * time.Second
+	bo.MaxElapsedTime = 10 * time.Second
+	bo.RandomizationFactor = 0.5
 
-	if err := backoff.Retry(connect, retryPolicy); err != nil {
-		return nil, fmt.Errorf("connect to redis with retries: %w", err)
+	if err := backoff.Retry(connect, bo); err != nil {
+		return nil, fmt.Errorf("failed to connect to redis after retries: %w", err)
 	}
 
-	defaultTTL, err := time.ParseDuration(cfg.TTL)
+	ttl, err := time.ParseDuration(cfg.Redis.TTL)
 	if err != nil {
 		_ = client.Close()
-		return nil, fmt.Errorf("parse redis ttl %q: %w", cfg.TTL, err)
+		return nil, fmt.Errorf("failed to parse redis ttl %q: %w", cfg.Redis.TTL, err)
 	}
 
-	return &RedisMessageCache{
-		client:     client,
-		defaultTTL: defaultTTL,
+	return &redisRepo{
+		client: client,
+		ttl:    ttl,
 	}, nil
 }
 
-func openRedisClient(cfg RedisConfig) (*redis.Client, error) {
-	dialTimeout, err := parseDurationSetting("dial timeout", cfg.DialTimeout)
+func openRedis(cfg *config.Config) (*redis.Client, error) {
+	dialTimeout, err := parseDuration("redis dial timeout", cfg.Redis.DialTimeout)
 	if err != nil {
 		return nil, err
 	}
 
-	readTimeout, err := parseDurationSetting("read timeout", cfg.ReadTimeout)
+	readTimeout, err := parseDuration("redis read timeout", cfg.Redis.ReadTimeout)
 	if err != nil {
 		return nil, err
 	}
 
-	writeTimeout, err := parseDurationSetting("write timeout", cfg.WriteTimeout)
+	writeTimeout, err := parseDuration("redis write timeout", cfg.Redis.WriteTimeout)
 	if err != nil {
 		return nil, err
 	}
 
-	poolTimeout, err := parseDurationSetting("pool timeout", cfg.PoolTimeout)
+	poolTimeout, err := parseDuration("redis pool timeout", cfg.Redis.PoolTimeout)
 	if err != nil {
 		return nil, err
 	}
 
 	client := redis.NewClient(&redis.Options{
-		Addr:         fmt.Sprintf("%s:%d", cfg.Host, cfg.Port),
-		Password:     cfg.Password,
-		DB:           cfg.Database,
+		Addr:         fmt.Sprintf("%s:%d", cfg.Redis.Host, cfg.Redis.Port),
+		Password:     cfg.Redis.Password,
+		DB:           cfg.Redis.DbIndex,
 		DialTimeout:  dialTimeout,
 		ReadTimeout:  readTimeout,
 		WriteTimeout: writeTimeout,
-		PoolSize:     cfg.PoolSize,
+		PoolSize:     cfg.Redis.PoolSize,
 		PoolTimeout:  poolTimeout,
-		MinIdleConns: cfg.MinIdleConns,
+		MinIdleConns: cfg.Redis.MinIdleConns,
 	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -101,49 +87,49 @@ func openRedisClient(cfg RedisConfig) (*redis.Client, error) {
 
 	if err := client.Ping(ctx).Err(); err != nil {
 		_ = client.Close()
-		return nil, fmt.Errorf("ping redis: %w", err)
+		return nil, fmt.Errorf("failed to ping redis: %w", err)
 	}
 
 	return client, nil
 }
 
-func parseDurationSetting(name string, value string) (time.Duration, error) {
+func parseDuration(name string, value string) (time.Duration, error) {
 	duration, err := time.ParseDuration(value)
 	if err != nil {
-		return 0, fmt.Errorf("parse redis %s %q: %w", name, value, err)
+		return 0, fmt.Errorf("failed to parse %s %q: %w", name, value, err)
 	}
 
 	return duration, nil
 }
 
-func (c *RedisMessageCache) Get(ctx context.Context, key string, destination proto.Message) error {
-	if c == nil || c.client == nil {
-		return errors.New("redis cache is not initialized")
+func (rr *redisRepo) Get(ctx context.Context, key string, dst proto.Message) error {
+	if rr == nil || rr.client == nil {
+		return errs.ErrCacheNotConfigured
 	}
 
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 
-	data, err := c.client.Get(ctx, key).Bytes()
+	data, err := rr.client.Get(ctx, key).Bytes()
 	if err != nil {
 		if errors.Is(err, redis.Nil) {
-			return fmt.Errorf("get cache key %q: %w", key, ErrCacheMiss)
+			return fmt.Errorf("redis cache miss for key %q: %w", key, errs.ErrCacheMiss)
 		}
 
-		return fmt.Errorf("get cache key %q: %w", key, err)
+		return fmt.Errorf("redis get failed for key %q: %w", key, err)
 	}
 
-	if err := proto.Unmarshal(data, destination); err != nil {
-		return fmt.Errorf("unmarshal cache key %q: %w", key, err)
+	if err := proto.Unmarshal(data, dst); err != nil {
+		return fmt.Errorf("failed to unmarshal cached value for key %q: %w", key, err)
 	}
 
 	return nil
 }
 
-func (c *RedisMessageCache) Set(ctx context.Context, key string, value proto.Message, expiration time.Duration) error {
-	if c == nil || c.client == nil {
-		return errors.New("redis cache is not initialized")
+func (rr *redisRepo) Set(ctx context.Context, key string, value proto.Message, ttl time.Duration) error {
+	if rr == nil || rr.client == nil {
+		return errs.ErrCacheNotConfigured
 	}
 
 	if err := ctx.Err(); err != nil {
@@ -152,56 +138,55 @@ func (c *RedisMessageCache) Set(ctx context.Context, key string, value proto.Mes
 
 	data, err := proto.Marshal(value)
 	if err != nil {
-		return fmt.Errorf("marshal cache key %q: %w", key, err)
+		return fmt.Errorf("failed to marshal cache value for key %q: %w", key, err)
 	}
 
-	if err := c.client.Set(ctx, key, data, expiration).Err(); err != nil {
-		return fmt.Errorf("set cache key %q: %w", key, err)
+	if err := rr.client.Set(ctx, key, data, ttl).Err(); err != nil {
+		return fmt.Errorf("redis set failed for key %q: %w", key, err)
 	}
 
 	return nil
 }
 
-func (c *RedisMessageCache) Delete(ctx context.Context, key string) error {
-	if c == nil || c.client == nil {
-		return errors.New("redis cache is not initialized")
+func (rr *redisRepo) Delete(ctx context.Context, key string) error {
+	if rr == nil || rr.client == nil {
+		return errs.ErrCacheNotConfigured
 	}
 
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 
-	if err := c.client.Del(ctx, key).Err(); err != nil {
-		return fmt.Errorf("delete cache key %q: %w", key, err)
+	if err := rr.client.Del(ctx, key).Err(); err != nil {
+		return fmt.Errorf("redis delete failed for key %q: %w", key, err)
 	}
 
 	return nil
 }
 
-func (c *RedisMessageCache) DefaultTTL() time.Duration {
-	if c == nil {
+func (rr *redisRepo) DefaultTTL() time.Duration {
+	if rr == nil {
 		return 0
 	}
 
-	return c.defaultTTL
+	return rr.ttl
 }
 
-func (c *RedisMessageCache) HealthCheck(ctx context.Context) error {
-	if c == nil || c.client == nil {
-		return errors.New("redis cache is not initialized")
+func (rr *redisRepo) CheckHealth() error {
+	if rr == nil || rr.client == nil {
+		return errs.ErrCacheNotConfigured
 	}
 
-	if err := c.client.Ping(ctx).Err(); err != nil {
-		return fmt.Errorf("redis health check failed: %w", err)
-	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 
-	return nil
+	return rr.client.Ping(ctx).Err()
 }
 
-func (c *RedisMessageCache) Close() error {
-	if c == nil || c.client == nil {
+func (rr *redisRepo) Close() error {
+	if rr == nil || rr.client == nil {
 		return nil
 	}
 
-	return c.client.Close()
+	return rr.client.Close()
 }

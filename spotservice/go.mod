@@ -14,6 +14,7 @@ replace github.com/dim-pep/Market2/proto => ../proto
 
 require (
 	github.com/beorn7/perks v1.0.1 // indirect
+	github.com/dim-pep/Market2/proto v0.0.0
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.1.0 // indirect
 	github.com/kr/pretty v0.3.1 // indirect

@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/cespare/xxhash/v2"
-	cache "github.com/dim-pep/Market2/spotservice/internal/cache/redis"
+	"github.com/dim-pep/Market2/spotservice/internal/cache"
 	"go.uber.org/zap"
 	"golang.org/x/sync/singleflight"
 	"google.golang.org/grpc"
@@ -25,7 +25,7 @@ type CacheInterceptorConfig struct {
 	OnCacheMiss      CacheMissObserver
 }
 
-func UnaryCacheInterceptor(cache cache.RedisMessageCache, cfg CacheInterceptorConfig, logger *zap.Logger) grpc.UnaryServerInterceptor {
+func UnaryCacheInterceptor(cache cache.CacheRepo, cfg CacheInterceptorConfig, logger *zap.Logger) grpc.UnaryServerInterceptor {
 	if logger == nil {
 		logger = zap.NewNop()
 	}

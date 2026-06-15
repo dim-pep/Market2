@@ -4,7 +4,7 @@
 // 	protoc        v6.33.4
 // source: spot_service.proto
 
-package sport_service
+package spot_service
 
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
@@ -174,20 +174,20 @@ var File_spot_service_proto protoreflect.FileDescriptor
 
 const file_spot_service_proto_rawDesc = "" +
 	"\n" +
-	"\x12spot_service.proto\x12\x05sport\x1a\x1fgoogle/protobuf/timestamp.proto\"3\n" +
+	"\x12spot_service.proto\x12\fspot_service\x1a\x1fgoogle/protobuf/timestamp.proto\"3\n" +
 	"\x12ViewMarketsRequest\x12\x1d\n" +
 	"\n" +
-	"user_roles\x18\x01 \x03(\tR\tuserRoles\">\n" +
-	"\x13ViewMarketsResponse\x12'\n" +
-	"\amarkets\x18\x01 \x03(\v2\r.sport.MarketR\amarkets\"\x81\x01\n" +
+	"user_roles\x18\x01 \x03(\tR\tuserRoles\"E\n" +
+	"\x13ViewMarketsResponse\x12.\n" +
+	"\amarkets\x18\x01 \x03(\v2\x14.spot_service.MarketR\amarkets\"\x81\x01\n" +
 	"\x06Market\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x04R\x02id\x12\x18\n" +
 	"\aenabled\x18\x02 \x01(\bR\aenabled\x12>\n" +
 	"\n" +
 	"deleted_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampH\x00R\tdeletedAt\x88\x01\x01B\r\n" +
-	"\v_deleted_at2^\n" +
-	"\x16SportInstrumentService\x12D\n" +
-	"\vViewMarkets\x12\x19.sport.ViewMarketsRequest\x1a\x1a.sport.ViewMarketsResponseB'Z%proto/pb/sportservicepb;sport_serviceb\x06proto3"
+	"\v_deleted_at2l\n" +
+	"\x16SportInstrumentService\x12R\n" +
+	"\vViewMarkets\x12 .spot_service.ViewMarketsRequest\x1a!.spot_service.ViewMarketsResponseB@Z>github.com/dim-pep/Market2/proto/pb/spotservicepb;spot_serviceb\x06proto3"
 
 var (
 	file_spot_service_proto_rawDescOnce sync.Once
@@ -203,16 +203,16 @@ func file_spot_service_proto_rawDescGZIP() []byte {
 
 var file_spot_service_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
 var file_spot_service_proto_goTypes = []any{
-	(*ViewMarketsRequest)(nil),    // 0: sport.ViewMarketsRequest
-	(*ViewMarketsResponse)(nil),   // 1: sport.ViewMarketsResponse
-	(*Market)(nil),                // 2: sport.Market
+	(*ViewMarketsRequest)(nil),    // 0: spot_service.ViewMarketsRequest
+	(*ViewMarketsResponse)(nil),   // 1: spot_service.ViewMarketsResponse
+	(*Market)(nil),                // 2: spot_service.Market
 	(*timestamppb.Timestamp)(nil), // 3: google.protobuf.Timestamp
 }
 var file_spot_service_proto_depIdxs = []int32{
-	2, // 0: sport.ViewMarketsResponse.markets:type_name -> sport.Market
-	3, // 1: sport.Market.deleted_at:type_name -> google.protobuf.Timestamp
-	0, // 2: sport.SportInstrumentService.ViewMarkets:input_type -> sport.ViewMarketsRequest
-	1, // 3: sport.SportInstrumentService.ViewMarkets:output_type -> sport.ViewMarketsResponse
+	2, // 0: spot_service.ViewMarketsResponse.markets:type_name -> spot_service.Market
+	3, // 1: spot_service.Market.deleted_at:type_name -> google.protobuf.Timestamp
+	0, // 2: spot_service.SportInstrumentService.ViewMarkets:input_type -> spot_service.ViewMarketsRequest
+	1, // 3: spot_service.SportInstrumentService.ViewMarkets:output_type -> spot_service.ViewMarketsResponse
 	3, // [3:4] is the sub-list for method output_type
 	2, // [2:3] is the sub-list for method input_type
 	2, // [2:2] is the sub-list for extension type_name

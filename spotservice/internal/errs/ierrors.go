@@ -11,12 +11,18 @@ import (
 )
 
 var (
-	ErrAlreadyExist = errors.New("A market with these parameters already exists")
+	ErrCacheNotConfigured = errors.New("cache is not configured")
+	ErrCacheMiss          = errors.New("cache entry not found")
 
-	ErrMarketNotFound     = errors.New("The requested market was not found")
-	ErrMarketIsDeleted    = errors.New("The requested market is deleted")
-	ErrNoAvailableMarkets = errors.New("No markets are available right now, please try again later")
-	ErrMarketAccessDenied = errors.New("You don't have permission to access this market")
+	ErrMarketRepositoryNotConfigured = errors.New("market repository is not configured")
+	ErrNilViewMarketsRequest         = errors.New("view markets request is nil")
+	ErrAlreadyExist                  = errors.New("A market with these parameters already exists")
+
+	ErrMarketServiceNotConfigured = errors.New("market service is not configured")
+	ErrMarketNotFound             = errors.New("The requested market was not found")
+	ErrMarketIsDeleted            = errors.New("The requested market is deleted")
+	ErrNoAvailableMarkets         = errors.New("No markets are available right now, please try again later")
+	ErrMarketAccessDenied         = errors.New("You don't have permission to access this market")
 
 	ErrDatabaseConnection          = errors.New("Service temporarily unavailable, please try again later")
 	ErrDatabaseUniqueViolation     = errors.New("An order with these parameters already exists")

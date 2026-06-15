@@ -1,11 +1,3 @@
-// Package observability provides Prometheus metrics and a small HTTP metrics server.
-//
-// Integration notes:
-//  1. Call InitGRPCServerMetrics() before creating your gRPC server.
-//  2. Add UnaryServerInterceptor() and StreamServerInterceptor() to your gRPC server options.
-//  3. Start RunMetricsHTTPServer() in a goroutine or an errgroup.
-//  4. Use the helper functions from your service handlers to record business-level metrics.
-//  5. Replace or remove dependency health checks if your project does not use external services.
 package observability
 
 import (
@@ -14,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/dim-pep/Market2/spotservice/config"
 	promgrpc "github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -23,32 +16,18 @@ import (
 )
 
 const (
-	defaultHealthCheckInterval = 15 * time.Second
-	defaultShutdownTimeout     = 30 * time.Second
+	healthCheckInterval = 15 * time.Second
+	shutdownTimeout     = 30 * time.Second
 )
 
-// AppConfig contains only the settings required by this metrics package.
-// Replace this with your own application config if needed.
-type AppConfig struct {
-	MetricsHost string
-	MetricsPort int
-}
-
-// HealthChecker is implemented by dependencies that can report availability.
-//
-// Examples:
-//   - database repository
-//   - Redis cache
-//   - message broker client
-//   - external API client wrapper
 type HealthChecker interface {
-	HealthCheck(ctx context.Context) error
+	CheckHealth() error
 }
 
 var (
-	grpcServerMetrics *promgrpc.ServerMetrics
+	serverMetrics *promgrpc.ServerMetrics
 
-	appOperationsTotal = promauto.NewCounterVec(
+	operationsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "app_operations_total",
 			Help: "Total number of completed application operations.",
@@ -56,7 +35,7 @@ var (
 		[]string{"service", "method", "status"},
 	)
 
-	appOperationDuration = promauto.NewHistogramVec(
+	operationDuration = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "app_operation_duration_seconds",
 			Help:    "Duration of application operations in seconds.",
@@ -65,7 +44,7 @@ var (
 		[]string{"service", "method"},
 	)
 
-	appActiveRequests = promauto.NewGaugeVec(
+	activeRequests = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "app_active_requests",
 			Help: "Number of requests currently being processed.",
@@ -73,7 +52,7 @@ var (
 		[]string{"service", "method"},
 	)
 
-	appCriticalErrorsTotal = promauto.NewCounterVec(
+	criticalErrorsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "app_critical_errors_total",
 			Help: "Total number of critical application errors.",
@@ -98,45 +77,28 @@ var (
 	)
 )
 
-// InitGRPCServerMetrics creates and registers gRPC server metrics.
-//
-// Call this once during application startup before attaching interceptors
-// to your gRPC server.
-func InitGRPCServerMetrics(opts ...promgrpc.ServerMetricsOption) *promgrpc.ServerMetrics {
-	defaultOptions := []promgrpc.ServerMetricsOption{
+func InitServerMetrics(opts ...promgrpc.ServerMetricsOption) *promgrpc.ServerMetrics {
+	serverOpts := append(
+		opts,
 		promgrpc.WithServerHandlingTimeHistogram(
 			promgrpc.WithHistogramBuckets([]float64{
-				0.001,
-				0.005,
-				0.01,
-				0.025,
-				0.05,
-				0.1,
-				0.25,
-				0.5,
-				1,
-				2.5,
-				5,
-				10,
+				0.001, 0.005, 0.01, 0.025, 0.05,
+				0.1, 0.25, 0.5, 1, 2.5, 5, 10,
 			}),
 		),
-	}
+	)
 
-	allOptions := append(opts, defaultOptions...)
+	serverMetrics = promgrpc.NewServerMetrics(serverOpts...)
+	prometheus.MustRegister(serverMetrics)
 
-	grpcServerMetrics = promgrpc.NewServerMetrics(allOptions...)
-
-	prometheus.MustRegister(grpcServerMetrics)
-
-	return grpcServerMetrics
+	return serverMetrics
 }
 
-// RunMetricsHTTPServer exposes Prometheus metrics and a basic health endpoint.
-//
-// Endpoints:
-//   - GET /metrics exposes Prometheus metrics.
-//   - GET /health returns 200 OK when the HTTP metrics server is alive.
-func RunMetricsHTTPServer(ctx context.Context, cfg AppConfig, logger *zap.Logger) error {
+func StartHTTPMetricsServer(ctx context.Context, cfg *config.Config, logger *zap.Logger) error {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.Handler())
 
@@ -146,7 +108,7 @@ func RunMetricsHTTPServer(ctx context.Context, cfg AppConfig, logger *zap.Logger
 	})
 
 	server := &http.Server{
-		Addr:              fmt.Sprintf("%s:%d", cfg.MetricsHost, cfg.MetricsPort),
+		Addr:              fmt.Sprintf("%s:%d", cfg.Prometheus.Host, cfg.Prometheus.Port),
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       5 * time.Second,
@@ -160,7 +122,7 @@ func RunMetricsHTTPServer(ctx context.Context, cfg AppConfig, logger *zap.Logger
 
 	go func() {
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Error("metrics http server stopped unexpectedly", zap.Error(err))
+			logger.Error("metrics http server failed", zap.Error(err))
 			errCh <- err
 		}
 	}()
@@ -172,17 +134,17 @@ func RunMetricsHTTPServer(ctx context.Context, cfg AppConfig, logger *zap.Logger
 	case <-ctx.Done():
 		logger.Info("stopping metrics http server")
 
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), defaultShutdownTimeout)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 		defer cancel()
 
 		if err := server.Shutdown(shutdownCtx); err != nil {
-			logger.Warn("graceful metrics shutdown failed; forcing close", zap.Error(err))
+			logger.Warn("metrics graceful shutdown failed; forcing close", zap.Error(err))
 
 			if closeErr := server.Close(); closeErr != nil {
-				logger.Error("forced metrics server close failed", zap.Error(closeErr))
+				logger.Error("metrics force close failed", zap.Error(closeErr))
 			}
 
-			return fmt.Errorf("shutdown metrics http server: %w", err)
+			return fmt.Errorf("failed to shutdown metrics server: %w", err)
 		}
 
 		logger.Info("metrics http server stopped")
@@ -190,91 +152,66 @@ func RunMetricsHTTPServer(ctx context.Context, cfg AppConfig, logger *zap.Logger
 	}
 }
 
-// UnaryServerInterceptor returns the Prometheus unary gRPC interceptor.
 func UnaryServerInterceptor() grpc.UnaryServerInterceptor {
-	if grpcServerMetrics == nil {
-		InitGRPCServerMetrics()
+	if serverMetrics == nil {
+		InitServerMetrics()
 	}
 
-	return grpcServerMetrics.UnaryServerInterceptor()
+	return serverMetrics.UnaryServerInterceptor()
 }
 
-// StreamServerInterceptor returns the Prometheus streaming gRPC interceptor.
 func StreamServerInterceptor() grpc.StreamServerInterceptor {
-	if grpcServerMetrics == nil {
-		InitGRPCServerMetrics()
+	if serverMetrics == nil {
+		InitServerMetrics()
 	}
 
-	return grpcServerMetrics.StreamServerInterceptor()
+	return serverMetrics.StreamServerInterceptor()
 }
 
-// ObserveOperationDuration returns a defer-friendly function that records
-// operation duration.
-//
-// Example:
-//
-//	done := observability.ObserveOperationDuration("CustomService", "CreateItem")
-//	defer done()
-func ObserveOperationDuration(service string, method string) func() {
+func ObserveOperationDuration(service, method string) func() {
 	start := time.Now()
 
 	return func() {
-		duration := time.Since(start).Seconds()
-		appOperationDuration.WithLabelValues(service, method).Observe(duration)
+		operationDuration.WithLabelValues(service, method).Observe(time.Since(start).Seconds())
 	}
 }
 
-// IncActiveRequest increments the number of in-flight requests.
-func IncActiveRequest(service string, method string) {
-	appActiveRequests.WithLabelValues(service, method).Inc()
+func IncActiveRequest(service, method string) {
+	activeRequests.WithLabelValues(service, method).Inc()
 }
 
-// DecActiveRequest decrements the number of in-flight requests.
-func DecActiveRequest(service string, method string) {
-	appActiveRequests.WithLabelValues(service, method).Dec()
+func DecActiveRequest(service, method string) {
+	activeRequests.WithLabelValues(service, method).Dec()
 }
 
-// IncOperation records a completed application operation.
-//
-// Suggested status values:
-//   - "success"
-//   - "error"
-//   - "not_found"
-//   - "invalid_argument"
-func IncOperation(service string, method string, status string) {
-	appOperationsTotal.WithLabelValues(service, method, status).Inc()
+func IncOperation(service, method, status string) {
+	operationsTotal.WithLabelValues(service, method, status).Inc()
 }
 
-// IncCriticalError records a high-priority application error.
 func IncCriticalError(errorType string) {
-	appCriticalErrorsTotal.WithLabelValues(errorType).Inc()
+	criticalErrorsTotal.WithLabelValues(errorType).Inc()
 }
 
-// IncCacheMiss records a cache miss.
-func IncCacheMiss(service string, cacheName string) {
+func IncCacheMiss(service, cacheName string) {
 	cacheMissesTotal.WithLabelValues(service, cacheName).Inc()
 }
 
-// RunDependencyHealthChecks periodically checks dependency availability
-// and exports the result as Prometheus gauges.
-//
-// The checks stop when ctx is canceled.
-func RunDependencyHealthChecks(
-	ctx context.Context,
-	serviceName string,
-	dependencies map[string]HealthChecker,
-	logger *zap.Logger,
-) {
-	ticker := time.NewTicker(defaultHealthCheckInterval)
+func RunDependencyHealthChecks(ctx context.Context, serviceName string, dependencies map[string]HealthChecker, logger *zap.Logger) {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	ticker := time.NewTicker(healthCheckInterval)
 	defer ticker.Stop()
 
 	checkOnce := func() {
 		for dependencyName, dependency := range dependencies {
-			checkCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-			err := dependency.HealthCheck(checkCtx)
-			cancel()
+			if dependency == nil {
+				dependencyUp.WithLabelValues(serviceName, dependencyName).Set(0)
+				continue
+			}
 
-			if err != nil {
+			if err := dependency.CheckHealth(); err != nil {
 				dependencyUp.WithLabelValues(serviceName, dependencyName).Set(0)
 				logger.Warn(
 					"dependency health check failed",
